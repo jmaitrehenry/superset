@@ -49,7 +49,7 @@ from contextlib import AbstractContextManager, nullcontext
 from typing import Any, Callable, TYPE_CHECKING, TypeVar
 
 from flask import current_app, g, has_app_context, has_request_context
-from flask_appbuilder.security.sqla.models import Group, User
+from flask_appbuilder.security.sqla.models import Group, PermissionView, Role, User
 
 if TYPE_CHECKING:
     from superset.connectors.sqla.models import SqlaTable
@@ -218,13 +218,16 @@ def load_user_with_relationships(
     """
     Load a user with all relationships needed for permission checks.
 
-    This function eagerly loads User.roles, User.groups, and Group.roles
-    to prevent detached instance errors when the session is closed/rolled back.
+    This function eagerly loads User.roles, Role.permissions,
+    PermissionView.permission, PermissionView.view_menu, User.groups, and
+    Group.roles to prevent detached instance errors when the session is
+    closed/rolled back.
 
     IMPORTANT: Always use this function instead of security_manager.find_user()
     when loading users for MCP tool execution. The find_user() method doesn't
-    eagerly load Group.roles, causing "detached instance" errors when permission
-    checks access group.roles after the session is rolled back.
+    eagerly load Role.permissions or PermissionView relationships, causing
+    "detached instance" errors when security_manager.can_access() accesses
+    perm_view.permission or perm_view.view_menu after the session is rolled back.
 
     Args:
         username: The username to look up (optional if email provided)
@@ -244,8 +247,18 @@ def load_user_with_relationships(
     from superset.extensions import db
 
     query = db.session.query(User).options(
-        joinedload(User.roles),
-        joinedload(User.groups).joinedload(Group.roles),
+        joinedload(User.roles).joinedload(Role.permissions).joinedload(
+            PermissionView.permission
+        ),
+        joinedload(User.roles).joinedload(Role.permissions).joinedload(
+            PermissionView.view_menu
+        ),
+        joinedload(User.groups).joinedload(Group.roles).joinedload(
+            Role.permissions
+        ).joinedload(PermissionView.permission),
+        joinedload(User.groups).joinedload(Group.roles).joinedload(
+            Role.permissions
+        ).joinedload(PermissionView.view_menu),
     )
 
     if username:
